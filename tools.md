@@ -84,3 +84,28 @@ COUNT_RECORDS_DESC = (
 the model." Test your descriptions by reading them cold.
 
 **Source.** CS Data Analyst Agent — `tools/schemas.py`.
+
+---
+
+## A hung operation is not a failed one; retry-on-exit will not catch it
+
+**Problem.** I wrapped a flaky upload in a retry-on-failure loop. When the network dropped
+mid-transfer the process did not error, it hung on a half-open socket at ~3 KB/s. The loop only
+retries on a non-zero exit, so it sat there indefinitely.
+
+**Technique.** For long external operations an agent drives, add a timeout plus a progress check,
+not just an exit-code retry. A timeout converts a hang into a retryable failure; if throughput
+stalls past a threshold, kill and restart on a fresh connection.
+
+**When to use.** Any long-running tool call over a network the agent does not control: uploads,
+large API calls, polling external jobs.
+
+**Code sketch.**
+```bash
+for i in 1 2 3; do timeout 600 big_upload && break; done   # timeout turns a hang into a retryable failure
+```
+
+**Pitfall.** `pkill -f "big_upload ..."` also matches your own shell running that command line and
+kills itself (exit 144). Match the child process exactly with `pgrep -fx`, or kill by PID.
+
+**Source.** Nebius DDP run, pushing a 20GB image over a degraded home uplink.
