@@ -10,7 +10,8 @@ came from and the mistake it fixes.
 ## How I use this
 
 - **In Claude Code / Cursor:** clone it next to whatever I'm building; the agent can read it.
-- **On the web / mobile:** browse it on GitHub, or the mirrored Notion database.
+- **On the web / mobile:** browse it on GitHub (a Notion mirror is planned — these files import
+  straight into Notion as pages).
 - **Quick recall:** the highest-leverage entries are also mirrored into my Claude Code memory
   so they surface automatically.
 
