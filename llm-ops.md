@@ -178,3 +178,77 @@ surface still validates.
 
 **Source.** Nebius DDP run. The first paid launch died at dataset load, the second at SSH setup, both
 catchable on CPU beforehand.
+
+---
+
+## A multi-call agent's latency floor is one whole answer; lower the load to find it
+
+**Problem.** My SLO was P95 end-to-end under 5 s at 10 rps. It missed by ~20x (P95 ~108 s). The obvious
+read is "too much load" and the obvious fix is to shed load. Both are wrong when the agent makes several
+sequential LLM calls per answer.
+
+**Technique.** One agent run is N sequential calls (generate -> verify -> revise = 2-3), so its latency
+floor is N × per-call latency, not one call. To find the floor, run the load test *down* until the
+backend is idle and watch the median. I swept 10 -> 5 -> 2 rps. At 2 rps the GPU was idle enough that
+only 1 of 360 requests timed out, yet P50 was still 5.65 s. The median answer alone breaks a 5 s budget,
+so no rps reduction can ever meet it; the fix is agent-side (fewer calls, or async so calls overlap) or a
+faster model, not a serving flag. Back-of-envelope: sustainable rps ≈ backend_req/s ÷ calls_per_run
+(~15 ÷ ~2.5 ≈ 6), so 10 rps was always going to queue without bound.
+
+**When to use.** Any latency SLO on a multi-step agent. Run the load test DOWN as well as up.
+
+**Code sketch.**
+```bash
+for rps in 10 5 2; do
+  python load_test/driver.py --rps $rps --duration 180 --out lt_$rps.json   # P50 at the bottom rung = the floor
+done
+```
+
+**Pitfall.** A stable run is not a passing run. At 2 rps the dashboard looked calm (no timeouts, KV idle),
+which tempts "it's fine at low load" — but the median was already over budget. Read the percentile, not
+the vibe.
+
+**Source.** Text-to-SQL vLLM SLO — `load_test/driver.py`, `REPORT.md` §3 (the 10/5/2 rps sweep).
+
+---
+
+## A targeted metric can move while the SLO doesn't — confirm the end-to-end followed
+
+**Problem.** Phase 6 asks you to "change one thing, confirm the metric moved." I dropped `--enforce-eager`
+to turn CUDA graphs on, betting decode speed was the wall. TPOT and P50 improved (41 s -> 37 s). I almost
+called it a win. End-to-end P95 did not budge (108 s -> 116 s, inside run-length noise).
+
+**Technique.** When you tune a lever, verify the *SLO* metric followed, not just the metric you targeted.
+A targeted metric improving while the SLO stays put is a real result: it proves the binding constraint is
+elsewhere. Here it localized the wall to throughput / agent shape, not decode.
+
+**When to use.** Every "one lever, re-measure" iteration where a metric and the SLO are not the same number.
+
+**Pitfall.** The trap is stopping at "the metric I aimed at moved." That is necessary, not sufficient.
+Re-check the actual end-to-end SLO every time before you claim the change helped.
+
+**Source.** Text-to-SQL vLLM SLO — baseline (enforce-eager) vs CUDA-graphs run, `REPORT.md` §3.
+
+---
+
+## Read the dashboard skeptically: threshold lines aren't data, coarse histogram tails lie
+
+**Problem.** I misread my own Grafana board twice and started building a diagnosis on it. (1) The KV-cache
+panel had threshold lines at 0.8 and 0.95; with real usage near 5% (a flat line on the floor) the two
+markers dominated the view and I read "KV pinned at 100%." (2) The e2e-latency panel showed ~8-minute P99
+spikes that were `histogram_quantile` artifacts: vLLM's top buckets are very wide, so when load stops and
+the tail goes sparse the quantile lands in one giant bucket and reads minutes.
+
+**Technique.** Treat threshold/marker lines as not-data (render them dashed, label "actual vs limit"), and
+distrust tail percentiles from coarse histograms — cross-check against a second signal (TTFT, TPOT,
+server-side e2e, the raw counter) before acting. Real per-call latency here was ~6-7 s, nothing like
+8 minutes.
+
+**When to use.** Any time a "pinned" gauge or a tail percentile drives a diagnosis.
+
+**Pitfall.** The human caught both misreads before I committed to them. Say the raw observation out loud
+("KV looks at 100%, P99 reads 8 min") so a second pair of eyes can sanity-check it; a confident wrong read
+of the dashboard sends the whole diagnosis down the wrong path, and the panels that mislead you will
+mislead the next reader too (so fix the panel, not just your notes).
+
+**Source.** Text-to-SQL vLLM SLO — `serving.json` (KV + e2e panel descriptions added after the misread).
