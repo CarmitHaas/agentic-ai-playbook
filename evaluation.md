@@ -163,3 +163,81 @@ you look.
 judge differed across notebooks — Task 5 prototyped with Gemma-2-9B, Task 6 ran with Qwen3-30B; all
 agreement numbers above are the Qwen judge. Position bias wasn't applicable (single output graded,
 no pairwise A/B), so it was neither needed nor tested.*
+
+---
+
+*The entries below come from a different build: a text-to-SQL agent on BIRD-bench served by
+Qwen3-30B-A3B (vLLM). The eval signal is SQL execution accuracy, not an LLM judge.*
+
+## Score text-to-SQL by canonicalized result rows, not by matching the SQL string
+
+**Problem.** Two SQL queries can look completely different and both be correct. String- or AST-matching
+the agent's SQL to a gold SQL rejects right answers and is hopeless to maintain.
+
+**Technique.** Execution accuracy: run BOTH the agent's SQL and the gold SQL against the DB, then
+compare the *result sets* after canonicalizing — sort rows, stringify cells, coerce NULL to "".
+Identical canonical row-sets → same answer. Compute the gold rows live; don't trust stored expected
+rows (ours weren't even stored).
+
+**When to use.** Any text-to-SQL / code-gen / query task where many surface forms are equally correct
+and you can execute the output.
+
+**Code sketch.**
+```python
+def canon(rows): return sorted(tuple("" if c is None else str(c) for c in r) for r in rows)
+correct = canon(run(db, gold_sql)) == canon(run(db, pred_sql))
+```
+
+**Pitfall.** Sorting rows makes the check order-insensitive, so it silently passes an `ORDER BY` query
+whose ordering is wrong. Fine when the question asks for a set; if order *is* the answer, don't sort.
+
+**Source.** Text-to-SQL vLLM SLO — `evals/run_eval.py` (`canonicalize` / `matches`).
+
+---
+
+## Instrument the agent loop per iteration, to prove it earns its keep
+
+**Problem.** A verify→revise (self-consistency) loop *feels* smart, but it adds 2-3× the LLM calls and
+latency. If it doesn't actually fix answers, it's pure cost — and you can't tell by eyeballing.
+
+**Technique.** Log every attempt (generate, then each revise) and re-score each one. Report a pass rate
+per iteration with carry-forward: "if we'd stopped after iter 0 vs iter 1 vs iter 2." Flat curve → the
+loop does nothing; rising curve → it's working.
+
+**Finding (30 BIRD questions).** iter-0 26.7% → iter-2 30%. 10/30 questions triggered a revise, but
+only **1** of those flipped wrong→right. So the loop earned a little, and most revises re-failed on the
+hard questions — a signal to spend effort on the *generate* prompt, not more iterations.
+
+**When to use.** Any iterative / self-correcting agent. Measure the marginal value of each iteration
+before adding more of them.
+
+**Pitfall.** Carry-forward matters: a question that stopped early must keep its last result for later
+iterations or the per-iteration rate is wrong. And "10 revises fired" is not "10 fixed" — separate
+*triggered* from *helped*.
+
+**Source.** Text-to-SQL vLLM SLO — `evals/run_eval.py` (`eval_one` / `summarize`).
+
+---
+
+## Iteration-graded phases reward levers tried, not just the right conclusion
+
+**Problem.** I diagnosed a missed latency SLO correctly and completely: the wall was the agent's 2-3
+sequential LLM calls, not a serving flag, proven by a 10/5/2 rps sweep. I changed exactly one serving
+lever (CUDA graphs), saw it not move P95, and concluded "structural." The grader agreed the conclusion
+was "among the best possible" and still docked 3 of 25: only one config lever was tried.
+
+**Technique.** When a phase is scored on "diagnosis AND iteration", the demonstrated process is graded
+separately from the correctness of the answer. Try 2-3 config levers even when you are already confident
+of the structural conclusion. The extra lever costs one run and buys the marks; the conclusion does not
+have to change. Load-direction experiments (raise/lower the rps) are strong evidence but they are not
+config levers, so they do not fully substitute for them.
+
+**When to use.** Any rubric-graded task with an explicit "iterate" criterion, and more broadly any review
+that rewards showing the search, not just reaching the destination.
+
+**Pitfall.** Being right early is the trap. "I already know the answer, more iterations are guessing" is
+correct for real engineering but leaves points on the table when the rubric pays for the iteration
+itself. Read what the criterion actually rewards: the conclusion, the process, or both.
+
+**Source.** Text-to-SQL vLLM SLO — Phase 6 scored 22/25; the 3-point deduction was "only one serving-side
+config change before concluding structural."
