@@ -23,6 +23,8 @@ came from and the mistake it fixes.
 - Bound the loop: state counter *and* recursion-limit backstop
 - "Suggest, don't run": confirm-to-execute with a no-tools model
 - Stream the reasoning, not just the answer
+- Template prompts with `.replace`, not `.format`, when injecting data
+- Structured verify verdict, parsed defensively, default to the safe branch
 
 ### [tools/](tools.md) — tool design
 - One pure-function layer, many adapters (agent + MCP share it)
@@ -37,6 +39,9 @@ came from and the mistake it fixes.
 ### [llm-ops/](llm-ops.md) — models & dependencies
 - Small model for routing, large for generation
 - Verify model IDs against the live catalog; pin a lockfile
+- Turn tracing off when measuring latency / SLOs
+- MoE serving: memory by total params, compute by active params
+- Build on a cheap same-model backend before the scarce GPU
 
 ### [mcp/](mcp.md) — Model Context Protocol
 - Expose tools as thin adapters over the shared functions
@@ -54,6 +59,8 @@ came from and the mistake it fixes.
 - Judges have a leniency bias; agreement tracks objectivity
 - Isolate one variable at a time when improving
 - Garbage source data masquerades as hallucination
+- Execution accuracy on canonicalized row-sets (text-to-SQL)
+- Per-iteration pass rate: prove the agent loop earns its keep
 
 ## Sources
 
@@ -63,6 +70,10 @@ came from and the mistake it fixes.
 - **RAG** — a FinanceBench pipeline (retrieval/reranking/faithfulness experiments). `rag`.
 - **Evals** — LLM-as-judge over product descriptions (rubric, judge calibration, improvement
   loops). `evaluation`.
+- **Text-to-SQL vLLM SLO** — a LangGraph text-to-SQL agent on BIRD-bench served by Qwen3-30B-A3B
+  (vLLM), with Prometheus/Grafana/Langfuse observability and an SLO load test
+  ([repo](https://github.com/CarmitHaas/text-to-sql-vllm-slo-carmit-haas)). `agents`, `evaluation`,
+  `llm-ops`.
 - [Nir Diamant — Agent Memory Techniques](https://github.com/NirDiamant/Agent_Memory_Techniques)
   (reference for the memory work).
 

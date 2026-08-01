@@ -135,3 +135,57 @@ update — guard for it or you crash mid-turn.
 
 **Source.** CS Data Analyst Agent — `main.py`, `ui/streamlit_app.py`. Crashed on the `None`
 update first time through.
+
+---
+
+## Template prompts with `.replace`, not `.format`, when you inject data
+
+**Problem.** Building a prompt with `PROMPT.format(schema=..., result=...)` blows up the moment the
+injected data contains a brace. Real DB rows and free-text cells contain `{` / `}`, and `str.format`
+reads those as field references — `KeyError`/`ValueError` — which the API wrapper turns into a 500 on
+*specific* questions only.
+
+**Technique.** Substitute placeholders with chained `.replace("{schema}", schema)`. `.replace` treats
+the value as a literal, so braces in the data are harmless. Keep `.format` only where every
+interpolated value is trusted (no user/DB text).
+
+**When to use.** Any prompt that interpolates retrieved rows, documents, tool outputs, or user text.
+
+**Code sketch.**
+```python
+user = (VERIFY_USER
+        .replace("{question}", state.question)
+        .replace("{result}", execution.render()))   # rows may contain { } — .format would crash
+```
+
+**Pitfall.** It fails on *some* inputs, not all, so it sails through a 5-question smoke test and only
+shows up on the unlucky question under load. I caught it firing 25 perf questions, not the first 5.
+
+**Source.** Text-to-SQL vLLM SLO — `agent/graph.py` (verify/revise); the provided `schema.py` had the
+same class of bug on a `None` foreign-key column.
+
+---
+
+## Structured verify verdict: parse defensively, default to the SAFE branch
+
+**Problem.** A verify step that asks "is this answer ok?" gets back prose, fenced JSON, or half-JSON.
+Parse it naively and a flaky reply silently routes the wrong way.
+
+**Technique.** Ask for one-line `{"ok": bool, "issue": str}`. Parse defensively (strip a ```json fence,
+regex the first `{...}`, `json.loads`, coerce types). On ANY parse failure default to *not ok*, so an
+unparseable verdict triggers a revise (cheap, recoverable) instead of passing an unvalidated answer.
+
+**When to use.** Any self-check / verify / guard node whose output drives control flow.
+
+**Code sketch.**
+```python
+def _parse_verdict(text):
+    m = re.search(r"\{.*\}", text, re.DOTALL)
+    try:    o = json.loads(m.group(0)); return bool(o.get("ok")), str(o.get("issue") or "")
+    except Exception: return False, "unparseable verdict"   # safe default = revise
+```
+
+**Pitfall.** Choose the default deliberately — the cost of being wrong is asymmetric. Here "not ok"
+costs one extra LLM call; "ok" would ship a wrong answer. Default toward the cheap mistake.
+
+**Source.** Text-to-SQL vLLM SLO — `agent/graph.py` `verify_node` / `_parse_verdict`.
