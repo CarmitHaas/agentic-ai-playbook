@@ -135,6 +135,67 @@ retrieval function. Generation async with a concurrency semaphore; `temperature=
 
 ---
 
+## Attach metadata before splitting, so every chunk inherits provenance
+
+**Problem.** Chunks that can't say which document, company, period, or page they came from can't be
+cited, can't be filtered, and can't be scored against a gold evidence page.
+
+**Technique.** Attach the metadata to the loaded `Document`s **before** the text splitter runs —
+`doc_name`, `company`, `doc_period`, `page_number` — and the splitter copies it onto every chunk
+for free. Prompt headers (`[doc_name, page N]`) and `page_hit@k` both fall out of this one
+ordering decision.
+
+**When to use.** Always, at ingestion. Retrofitting provenance onto an existing index means
+re-splitting everything.
+
+**Pitfall.** Page numbers from the PDF loader are 0-indexed and the gold labels may be 1-indexed —
+decide the convention at ingestion and write it down, or every page-level metric is silently off
+by one.
+
+**Source.** RAG / FinanceBench — Task 3 ingestion.
+
+---
+
+## Eval-k must equal retrieval-k
+
+**Problem.** The eval computed `page_hit@5` as `docs[:5]` — over a retriever configured with k=4.
+The metric was silently `page_hit@4` wearing a @5 label, and the course feedback caught it.
+
+**Technique.** Derive the hit-rate cutoffs from the retrieval call itself (or assert
+`len(docs) >= k` before computing `hit@k`). If you want @5, retrieve at least 5.
+
+**When to use.** Any retrieval metric with a k in its name, and any experiment that changes k —
+the k=8 experiment's @5 was real precisely because 8 ≥ 5.
+
+**Pitfall.** The number still prints, the plot still renders, and the mislabeled metric is
+*conservative* (hit@4 ≤ hit@5), so nothing looks wrong. A metric name is a claim about the
+computation; keep them coupled in code, not by convention.
+
+**Source.** RAG / FinanceBench — Task 6 eval (and the graded feedback that caught it).
+
+---
+
+## Question provenance predicts the failure mode
+
+**Problem.** Averaged over the whole eval set, "the model is wrong 70% of the time" hides *how* it
+is wrong — and the how decides the fix.
+
+**Technique.** Slice the eval by where the questions came from. Domain-relevant questions (real
+analyst-style, answerable-sounding) invite **confident bluffing**; novel/LLM-generated questions
+invite **refusal**. The same model, two opposite failure modes, split cleanly by provenance.
+
+**When to use.** Designing or debugging any eval set that mixes organic and synthetic questions.
+Report the slices, not just the aggregate — RAG helped the bluffing slice and hurt the refusal
+slice in this build.
+
+**Pitfall.** A synthetic-heavy eval set makes the system look over-cautious; an organic-heavy one
+makes it look like a fabulist. The aggregate number depends on the mix, which is an authoring
+choice, not a model property.
+
+**Source.** RAG / FinanceBench — Tasks 1 and 5 discussions.
+
+---
+
 *Honest scope: chunk size (1000 / 150) was the assignment's fixed default, never swept — there are
 no chunking before/after numbers. Hybrid BM25+dense, query rewriting, and per-document routing
 were proposed but not implemented.*

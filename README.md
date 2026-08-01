@@ -32,6 +32,7 @@ came from and the mistake it fixes.
 - One pure-function layer, many adapters (agent + MCP share it)
 - Return counts and small samples, never whole tables
 - Tool descriptions are part of the logic
+- A hung operation is not a failed one; retry-on-exit will not catch it
 - The user's screenshots folder as an evidence conveyor (auth-proof human-in-the-loop capture)
 
 ### [memory/](memory.md) — what an agent remembers
@@ -66,6 +67,9 @@ came from and the mistake it fixes.
 - A domain-mismatched reranker makes things worse
 - Stricter prompts trade correctness for faithfulness
 - Cache every LLM call for reproducible experiments
+- Attach metadata before splitting, so every chunk inherits provenance
+- Eval-k must equal retrieval-k (hit@5 over 4 retrieved docs is hit@4 in disguise)
+- Question provenance predicts the failure mode (organic → bluffing, synthetic → refusal)
 - A nearest-neighbor index has no reject option (open-set forces a wrong match)
 - Match the embedder to the distinction you need (CLIP embeds appearance, not identity)
 
@@ -92,15 +96,30 @@ came from and the mistake it fixes.
 - Candor and self-documenting artifacts are rewarded, not penalized
 - One requirement, one named artifact — reviewers grade what they can find
 - Annotate spec deviations where they happen, or they grade as drift
+- Pick the judge from a different model family than the generator
+- A threshold that never moves is measuring the threshold, not the effect
+
+### [finetuning/](finetuning.md) — QLoRA & small-model SFT
+- Keep the LoRA params in a dtype the optimizer can survive
+- A LoRA recipe is per-architecture, not universal
+- A judge comparing against a broken baseline measures "less broken", not "good"
+- Small-model fine-tuning changes the register, not the knowledge
+- Generate the dataset with a bigger model, then defend it like production input
 
 ## Sources
 
 - **CS Data Analyst Agent** — LangGraph ReAct agent over the Bitext dataset
   ([repo](https://github.com/CarmitHaas/customer-service-agent-carmit-haas)). `agents`, `tools`,
   `memory`, `llm-ops`, `mcp`.
-- **RAG** — a FinanceBench pipeline (retrieval/reranking/faithfulness experiments). `rag`.
+- **RAG** — a FinanceBench pipeline (retrieval/reranking/faithfulness experiments)
+  ([repo](https://github.com/CarmitHaas/financebench-rag)). `rag`.
 - **Evals** — LLM-as-judge over product descriptions (rubric, judge calibration, improvement
-  loops). `evaluation`.
+  loops) ([repo](https://github.com/CarmitHaas/eval-driven-development)). `evaluation`.
+- **QLoRA level-adaptive QA** — SmolLM2-360M + flan-t5-small fine-tuned for child/student/expert
+  answers, judged eval with an honest re-count
+  ([repo](https://github.com/CarmitHaas/qlora-level-adaptive-qa)). `finetuning`, `evaluation`.
+- **LLM Architectures HW1** — optimization fundamentals (SGD, L1 regularization, optimizer
+  trajectories); source of the threshold-that-never-moves lesson. `evaluation`.
 - **Text-to-SQL vLLM SLO** — a LangGraph text-to-SQL agent on BIRD-bench served by Qwen3-30B-A3B
   (vLLM), with Prometheus/Grafana/Langfuse observability and an SLO load test
   ([repo](https://github.com/CarmitHaas/text-to-sql-vllm-slo-carmit-haas)). `agents`, `evaluation`,
@@ -112,12 +131,15 @@ came from and the mistake it fixes.
   project, graded 97/100) ([repo](https://github.com/CarmitHaas/multinode-ddp-skypilot)).
   `llm-ops`, `evaluation`.
 - **Glass-box PPO** - PPO on GPT-2 built from scratch (no `PPOTrainer`), swept over clip epsilon,
-  GAE lambda, KL beta, PPO epochs and a no-critic ablation: 11 controlled runs on CPU.
-  `evaluation`, `llm-ops`.
-- **roofline_to_Cuda** — GPU performance homework (roofline model, decode-loop optimization, torch.compile & CUDA graphs), executed on a rented H100. `llm-ops`, `evaluation`.
+  GAE lambda, KL beta, PPO epochs and a no-critic ablation: 11 controlled runs on CPU
+  ([repo](https://github.com/CarmitHaas/ppo-glassbox)). `evaluation`, `llm-ops`.
+- **roofline_to_Cuda** — GPU performance homework (roofline model, decode-loop optimization,
+  torch.compile & CUDA graphs), executed on a rented H100
+  ([repo](https://github.com/CarmitHaas/roofline-to-cuda-graphs)). `llm-ops`, `evaluation`.
 - **Quantization & serving** - fake quantization from first principles, then the same 7B model served
   BF16 vs on-the-fly FP8 on an H100 and benchmarked with guidellm (memory 1.74x, decode 32% faster,
-  prefill 17% slower at batch size 1). `llm-ops`, `evaluation`.
+  prefill 17% slower at batch size 1)
+  ([repo](https://github.com/CarmitHaas/quant-serving-bf16-vs-fp8)). `llm-ops`, `evaluation`.
 - **Multimodal (BLIP + CLIP)** - image captioning, VQA, and CLIP face recognition on LFW, run locally on CPU with a train/test split and an out-of-set stranger test. `evaluation`, `rag`, `llm-ops`.
 - [Nir Diamant — Agent Memory Techniques](https://github.com/NirDiamant/Agent_Memory_Techniques)
   (reference for the memory work).

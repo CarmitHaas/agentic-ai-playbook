@@ -159,10 +159,46 @@ you look.
 
 ---
 
-*Note on judges: the principle is judge ≠ generator family (to avoid self-preference). The specific
-judge differed across notebooks — Task 5 prototyped with Gemma-2-9B, Task 6 ran with Qwen3-30B; all
-agreement numbers above are the Qwen judge. Position bias wasn't applicable (single output graded,
-no pairwise A/B), so it was neither needed nor tested.*
+## Pick the judge from a different model family than the generator
+
+**Problem.** Models rate their own family's style more favorably (self-preference bias), so a
+same-family judge quietly inflates the system it is supposed to police.
+
+**Technique.** Generator and judge from different families — here Llama-3.1-8B generated,
+Gemma-2-9B prototyped the judging, Qwen3-30B ran it. All agreement numbers above are the Qwen
+judge.
+
+**When to use.** Every LLM-as-judge setup. Position bias mitigation (answer-order swapping) only
+matters for pairwise A/B grading — single-output grading doesn't need it.
+
+**Pitfall.** Switching judge models mid-project changes the measurement. Document the switch
+where it happens, with the reason — an undocumented judge swap reads as drift (and cost a point
+in grading).
+
+**Source.** Evals — tasks 5/6.
+
+---
+
+## A threshold that never moves is measuring the threshold, not the effect
+
+**Problem.** An L1-regularization sweep counted "non-zero weights" with a 1e-7 tolerance — and the
+count barely moved across three orders of magnitude of λ. The plot said "L1 doesn't sparsify",
+which is false; the tolerance was just far below where the shrinkage lives.
+
+**Technique.** Before trusting a thresholded metric, check that it *moves* across your sweep. If
+it doesn't, sweep the threshold too (1e-4 would have exposed the effect), or plot the threshold-free
+quantity (sorted weight magnitudes) alongside.
+
+**When to use.** Any metric of the form `count(x < tol)` or `count(x > cutoff)` — sparsity counts,
+pass rates, hit rates. Same family as the clipfrac lesson: a fixed constant inside the metric can
+dominate what the metric reports.
+
+**Pitfall.** Pair it with a demo parameter chosen so extreme it destroys the phenomenon — the
+same sweep used λ=0.1 for the weight-dynamics plot, which collapsed training to 0.50 accuracy, so
+the "shrunk features" plot had no story to tell. A demonstration needs parameters where the effect
+exists *and* the system still works.
+
+**Source.** LLM Architectures HW1 — L1 regularization task (and its graded feedback).
 
 ---
 
