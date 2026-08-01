@@ -138,3 +138,37 @@ retrieval function. Generation async with a concurrency semaphore; `temperature=
 *Honest scope: chunk size (1000 / 150) was the assignment's fixed default, never swept — there are
 no chunking before/after numbers. Hybrid BM25+dense, query rewriting, and per-document routing
 were proposed but not implemented.*
+
+---
+
+*Source for the two entries below: a multimodal face-recognition task - CLIP image embeddings averaged into per-identity prototypes, cosine similarity for identification, LFW faces, run locally on CPU. Numbers are real, from the notebook. The lessons are retrieval lessons, not face-specific.*
+
+## A nearest-neighbor index has no reject option
+
+**Problem.** Cosine similarity always returns a top match. Query it with something that belongs to no known class and it still hands back the closest item, with a confident-looking score.
+
+**Technique.** Test the open-set case explicitly. I queried a face (Tom Cruise) that matched none of the five known identities; the system labeled him Arnold Schwarzenegger at sim 0.89.
+
+**When to use.** Any retrieval or classification built on top-k similarity, including RAG. The retriever returns the nearest chunk even when the corpus holds no answer.
+
+**Finding.** The stranger's 0.89 sat inside the genuine-match range (0.85 to 0.96), so a single global similarity threshold could not reject him without also rejecting real matches. Naive thresholding does not solve open-set.
+
+**Pitfall.** In RAG this is the "confidently answers from an irrelevant chunk" failure. The fix is calibrated rejection or an explicit not-found path, not a hand-picked cutoff.
+
+**Source.** Multimodal task - CLIP prototype + cosine similarity on LFW.
+
+---
+
+## Match the embedder to the distinction you need
+
+**Problem.** A general-purpose embedder encodes general features, which may not be the features your task needs to tell items apart.
+
+**Technique.** Notice what the embedding actually clusters on. CLIP image vectors cluster on broad appearance (hair color, face shape, setting), not fine identity, so CLIP is a strong scene matcher and a weak face matcher.
+
+**When to use.** Before trusting cosine similarity for a fine-grained task. Ask whether the embedder was trained to separate the exact thing you care about.
+
+**Finding.** The only two errors in 15 were Winona Ryder and Angelina Jolie swapping (two dark-haired actresses at similar events), while three visually distinct people were never confused. CLIP grouped by look, not by identity.
+
+**Pitfall.** High accuracy on distinct classes hides this. It only surfaces on the look-alikes, which is exactly why the eval set has to contain some.
+
+**Source.** Multimodal task - CLIP embeddings, LFW.

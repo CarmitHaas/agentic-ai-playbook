@@ -427,3 +427,52 @@ not a crash.
 
 **Source.** roofline_to_Cuda (H100 perf homework) -- the probe caught cu130-vs-driver-550
 before the graded run, saving a full CPU-garbage run on a paid H100.
+
+---
+
+## Check the library API at the installed version, not from memory
+
+**Problem.** Library APIs drift across major versions, and coding from memory fails silently or with a confusing error. On transformers 5.x, `CLIPModel.get_image_features(**inputs)` returned a `BaseModelOutputWithPooling` object, not the projected embedding tensor I expected, so calling `.norm()` on it blew up.
+
+**Technique.** When a result is not what you expect, introspect it (`type(out)`, `dir(out)`) instead of guessing. The correct image embedding on 5.x is `visual_projection(vision_model(pixel_values=...).pooler_output)`, which gives the [n, 512] vector.
+
+**When to use.** Any time you pin a fresh major version and reach for an API you last used on an older one.
+
+**Pitfall.** The wrong path can look like it works. `pooler_output` is a real 768-dim vector, so cosine similarity would still run and return plausible-but-wrong numbers. Confirm you are on the projected 512-dim space, not the raw vision output.
+
+**Source.** Multimodal task - CLIP on transformers 5.12 (CPU).
+
+---
+
+## Drive a notebook from a persistent kernel, and write outputs back by cell id
+
+**Problem.** An assignment notebook already held the instructor's saved outputs (they showed
+`device: mps`), and re-running it top to bottom would have destroyed them and cost an extra 220
+training iterations. But new work has to appear as genuinely executed cells, not pasted text.
+
+**Technique.** Start one long-lived kernel (`jupyter kernel`), load only the definition cells into
+it, then execute new cells one at a time through `jupyter_client`, capturing iopub messages and
+writing them into the `.ipynb` as real nbformat outputs. Kernel state survives across separate
+client connections, so each checkpoint is a fresh short-lived client against the same warm kernel.
+
+**When to use.** Long-running notebook work where earlier outputs must be preserved, where a full
+top-to-bottom re-run is expensive, or where you want to keep working while a 20-minute cell runs.
+
+**Code sketch.**
+```python
+cid = cell.get("id")
+outs, ec, status = run(kc, "".join(cell["source"]))
+nb = json.load(open(nb_path))            # RE-READ: the file may have gained cells meanwhile
+target = next((c for c in nb["cells"] if c.get("id") == cid), nb["cells"][i])
+target["outputs"], target["execution_count"] = outs, ec
+json.dump(nb, open(nb_path, "w"), indent=1, ensure_ascii=False)
+```
+
+**Pitfall, learned the hard way.** The first version loaded the notebook, ran a 23-minute cell, then
+wrote back the copy it had loaded at the start. Editing the file during that window silently
+reverted the edit and nearly wrote outputs onto the wrong cell. Two rules: re-read before writing,
+and match by stable cell id, never by index. Verify at the end by diffing every code cell's source
+and outputs against a backup, so "I did not touch the outputs" is a check and not a claim.
+
+**Source.** Glass-box PPO lab (Nebius Academy session 2), where section 14 was added to a notebook
+whose earlier sections had to stay untouched.

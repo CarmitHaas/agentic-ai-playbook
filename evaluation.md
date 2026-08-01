@@ -345,6 +345,40 @@ have pushed the compiled path past the tier boundary; I never ran the pair.
 
 ---
 
+*Source for the two entries below: a multimodal assignment - BLIP captioning + VQA and CLIP face recognition, run locally on CPU. Numbers are real, from the graded notebook.*
+
+## Pick evaluation data that is allowed to fail
+
+**Problem.** An eval set where the model scores 100% teaches you nothing about its limits. My first identity set for a face-recognition task (five early-2000s politicians) scored 15/15, which looked great and hid every weakness.
+
+**Technique.** Choose eval items near the decision boundary on purpose. I swapped in five entertainers with two genuine look-alikes (Winona Ryder, Angelina Jolie) and added one out-of-set person (Tom Cruise) who belongs to no known class. Accuracy dropped to 13/15 and the failures became the useful part of the writeup.
+
+**When to use.** Any time a first eval pass looks suspiciously perfect. A ceiling result usually means the test is too easy, not that the system is done.
+
+**Finding.** Politician set: 15/15, nothing to analyze. Celebrity set: 13/15, with a clean Winona/Jolie confusion (sim 0.90 and 0.91) and a stranger forced onto the nearest known face.
+
+**Pitfall.** Do not manufacture a failure by breaking the system. Manufacture it by choosing harder, fairer data. The look-alikes and the stranger are legitimate inputs, not sabotage.
+
+**Source.** Multimodal task - CLIP face recognition on LFW.
+
+---
+
+## Write the analysis from captured outputs, not the outputs you expect
+
+**Problem.** It is tempting to write "the model probably says X" and move on. On greedy decoding the model is deterministic, so guessing is pure risk for no reason.
+
+**Technique.** Run the real pipeline headless first, capture every prediction to a file, then write the notebook analysis by quoting those exact strings and numbers. The graded run reproduces them because decoding is deterministic (temperature 0 / greedy).
+
+**When to use.** Any deliverable that cites model output. The preview equals the final run, so the analysis is correct before the reader ever executes a cell.
+
+**Finding.** Every quoted caption, VQA answer, similarity score, and accuracy in the writeup matched the graded run exactly, because I authored them from a captured run rather than from memory.
+
+**Pitfall.** This only holds while decoding is deterministic. Turn on sampling and the captured run and the reader's run diverge, so the quoted numbers go stale.
+
+**Source.** Multimodal task - BLIP captioning + VQA.
+
+---
+
 ## Thread one run_id through every surface; reviewers verify by cross-referencing
 
 **Problem.** Evidence that doesn't line up reads as unverifiable, even when it's all true. A
@@ -368,3 +402,163 @@ run.
 
 **Source.** coding-agent-eval-pipeline — graded 100/100; the grader's per-task feedback is the
 evidence, cross-checks quoted verbatim.
+
+---
+
+## Compare runs at the point where they are still comparable
+
+**Problem.** You sweep a hyperparameter, then read the metric at the end of every run and rank the
+settings. But by the end, the runs are no longer one system under different settings, they are
+different systems. Whatever the parameter did early on has been amplified into a different state,
+and the metric is now reporting the state, not the parameter.
+
+**Technique.** Reset to identical weights and reseed the RNG before every run, so every run sees
+the byte-identical first batch. Then read the cross-run comparison at **iteration 0**, where the
+only difference is the knob, and read the end-of-run numbers as outcomes rather than as a
+measurement of the knob. Report both.
+
+**When to use.** Any sweep over a system that accumulates state: RL runs, fine-tuning configs,
+agent memory settings compared after N turns, retrieval configs compared after index drift.
+
+**Code sketch.**
+```python
+def train_ex(c, name, ...):
+    torch.manual_seed(EX_SEED)
+    policy.load_state_dict(copy.deepcopy(policy_fresh_state))  # train() mutates the GLOBAL policy
+    ...
+    H["adv_std"].append(adv.std().item())
+
+# the honest comparison is index 0: identical weights, identical rollout, one dial different
+[runs[n]["adv_std"][0] for n in names]   # 0.1241, 0.1951, 0.2610  monotone in lambda
+[summ(runs[n])["adv_std"] for n in names] # 0.090, 2.036, 0.452   ordering destroyed
+```
+
+**Pitfall.** This bit three times in one session and inverted the conclusion every time. Worst case:
+a converged policy and a leashed policy both show tiny importance-ratio drift, for opposite reasons.
+The end-of-run table said clip=0.05 moved the policy *most*; at iteration 0 it moved it *least*,
+which is the true effect of a narrow clip. Also: check whether the training function mutates global
+state. Two configs run back to back without a reset are not a comparison, the second inherits the
+first.
+
+**Source.** Glass-box PPO lab (Nebius Academy session 2), exercises 1, 2 and 4.
+
+---
+
+## A metric whose definition contains the knob you are turning is not a measurement
+
+**Problem.** PPO's `clipfrac` is defined as `|ratio - 1| > clip_eps`. Sweeping `clip_eps` and
+reporting `clipfrac` changes the ruler and the thing being measured at the same time. Narrowing the
+clip from 0.2 to 0.05 moved `clipfrac` by about 100x (0.003 to 0.291) while the policy's actual
+step size changed by well under 2x.
+
+**Technique.** For every threshold-based metric, log a threshold-free twin and lead with it. Keep
+the threshold metric for continuity with everyone else's dashboards, but do not draw conclusions
+from it across settings of its own threshold.
+
+**When to use.** Any tuned threshold that also appears in a reported metric: pass-rate at a judge
+score cutoff while tuning the cutoff, "responses under budget B" while tuning B, retrieval hit-rate
+at k while tuning k.
+
+**Code sketch.**
+```python
+st["clipfrac"].append(((ratio - 1).abs() > c.clip_eps).float().mean().item())  # ruler moves with the knob
+st["ratio_drift"].append((ratio - 1).abs().mean().item())                      # same ruler everywhere
+```
+
+**Pitfall.** The threshold-free twin is not automatically comparable either. `ratio_drift` still has
+to be read at the shared starting state (see the entry above).
+
+**Source.** Glass-box PPO lab, exercise 1. A grader called this out as the strongest single idea in
+the submission.
+
+---
+
+## Find out what dominates a metric before you use it as a proxy
+
+**Problem.** I logged total gradient norm as a variance meter for the policy gradient. It read 15.6,
+221.1 and 246.4 across three runs, which looked like a clean signal about update variance. It was
+not. The loss also contains `vf_coef * value_loss`, and the value head was regressing a return that
+grew from 0.1 to 14 during the run, so the gradient norm was mostly reporting the critic's
+regression error, ordered by how much reward each run had found.
+
+**Technique.** Before treating an aggregate as a proxy for X, decompose it and ask what term is
+largest. If you cannot decompose it cheaply, run the ablation that removes the suspected dominant
+term and see how much of the metric goes with it.
+
+**When to use.** Any composite metric: total loss, total latency, total token spend, "score".
+
+**Code sketch.**
+```python
+gn = nn.utils.clip_grad_norm_(policy.parameters(), 1.0)
+# same policy learning, vf_coef 0.1 -> 0.0:  grad_norm 221.1 -> 8.7
+# 96% of the gradient was the critic catching up, none of it was doing the learning
+```
+
+**Pitfall.** The confirming ablation arrived two exercises later, so three intermediate conclusions
+had already been written against the bad proxy. State the caveat where it is discovered *and* at the
+top of every later section that leans on the metric, not only where you found it.
+
+**Source.** Glass-box PPO lab, exercises 1 and 5. The grader flagged the late placement of this
+caveat as the main thing to improve.
+
+---
+
+## A penalty coefficient is only meaningful as a share of the objective
+
+**Problem.** The same KL coefficient beta = 0.05 was a healthy leash on one reward function
+(`beta*KL/R` = 11.6%, reward climbed to 13.7) and a strangling one on another (34.1%, reward stuck
+at 1.5). Nothing about the coefficient changed. The reward's achievable scale did.
+
+**Technique.** Report and tune the dimensionless share, `penalty_coefficient * penalty_magnitude /
+objective_magnitude`, not the raw coefficient. That share is what transfers between tasks, reward
+functions and datasets. Here every regime that behaved sat between 4% and 12%.
+
+**When to use.** KL penalties in RLHF, DPO's beta, regularisation weights, any auxiliary-loss
+coefficient, and cost-vs-quality tradeoff weights in an agent's scoring function.
+
+**Code sketch.**
+```python
+share = beta * kl_per_seq / reward
+#  0.05 on positive-word reward -> 11.6%   healthy
+#  0.05 on '!'-count reward     -> 34.1%   policy strangled, never learns
+#  0.005 on '!'-count reward    ->  3.9%   KL blows out to 46 and the text degenerates
+```
+
+**Pitfall, and the one the reviewer marked down.** Do not calibrate the coefficient from a run that
+the coefficient itself suppressed. I set the new beta from the reward the throttled run achieved,
+which is circular, and it overshot. Iterating fixed it, but a small log-spaced sweep (5 values from
+0.005 to 0.1) is the systematic answer and does not depend on the previous run's endpoint.
+
+**Source.** Glass-box PPO lab, exercise 3.
+
+---
+
+## Commit the prediction and its falsifier in writing before the run
+
+**Problem.** Reading results and then explaining them always feels like understanding. It is not
+distinguishable, after the fact, from fitting a story to whatever came out.
+
+**Technique.** Before each run, write numbered, specific, falsifiable predictions plus one line
+naming what result would prove the mechanism wrong. Run. Then write the verdict against the
+predictions you actually made, keeping the failures visible and diagnosing them.
+
+**When to use.** Any parameter study or ablation, and any agent change you are about to defend to
+someone. It costs about five minutes per experiment and it is the only thing that makes a wrong
+prediction more valuable than a right one.
+
+**Code sketch.**
+```markdown
+**What I predict, before running.**
+3. Reward: eps=0.6 fastest, with the highest KL and the noisiest curve.
+
+**What would falsify me:** if ratio drift is flat across all three, the clip is not the binding
+constraint and gradient-norm clipping is doing the work.
+```
+
+**Pitfall.** The falsifier is the part people skip, and it is the part that pays. In this lab the
+falsifier fired: drift was nearly flat, and the real trust region turned out to be
+`clip_grad_norm_(params, 1.0)`, which was scaling the update down by a factor of about 220. Without
+the pre-committed falsifier that reads as a failed experiment instead of the finding it was.
+
+**Source.** Glass-box PPO lab, all five exercises. Graded 100/100, with the protocol itself cited
+as the reason.
