@@ -577,3 +577,56 @@ rather than `90`. That check is what told me the tail-latency table would hold n
 
 **Source.** Quantization/serving homework. The whole benchmark command was validated on CPU, so the H100
 only ever ran the one cell that needed a GPU.
+
+---
+
+## Ship heavy images from datacenter egress; keep your changes as thin layers
+
+**Problem.** GPU training images are enormous (the NVIDIA PyTorch base is ~20 GB, ~9.2 GB
+compressed). Building locally and pushing over a home uplink makes the registry push — not the
+training — the wall-clock bottleneck of the whole project, and every image tweak repeats it.
+
+**Technique.** Two habits. (1) Build and push from a cheap CPU VM inside a datacenter (any cloud),
+where egress to the registry runs at datacenter speed. (2) Order the Dockerfile so the huge base
+and the stable dependency install come first and your edits land in small final layers — then a
+change re-uploads megabytes, not gigabytes.
+
+**When to use.** Any containerized GPU job; anything on the NVIDIA NGC bases.
+
+**Code sketch.**
+```dockerfile
+FROM nvcr.io/nvidia/pytorch:25.12-py3      # huge, cached, never changes
+RUN pip install transformers datasets ...  # stable layer, rarely changes
+RUN apt-get install -y openssh-server rsync # small
+# your script arrives via workdir sync, not baked in -> no rebuild per edit
+```
+
+**Pitfall.** Count the pull side too: the 9.2 GB compressed image took ~6.5 min to land on each
+GPU node. That is billed GPU time on every fresh node — another reason the image should change
+rarely and thinly.
+
+**Source.** multinode-ddp-skypilot — built and pushed from a Nebius CPU VM; later changes were
+thin layers on top.
+
+---
+
+## The orchestrator has an implicit contract with your image — and breaks it cryptically
+
+**Problem.** Multi-node runtimes assume things about your container that no docs page states as a
+checklist. SkyPilot's Kubernetes runtime rendezvouses head and worker pods over SSH and syncs the
+workdir with rsync; a stock image has neither. The failure is not "openssh-server missing" — the
+head pod dies in setup with `sed: can't read /etc/ssh/sshd_config`, three causal steps away from
+the real gap.
+
+**Technique.** When a job fails *in the orchestrator's setup phase* (before your code runs), stop
+debugging your code. Diff what the runtime's setup script touches (config files, daemons, binaries)
+against what the image actually ships, and bake the missing pieces into the image.
+
+**When to use.** First run of any framework-launched multi-node job; any cryptic failure that
+happens before your entrypoint logs its first line.
+
+**Pitfall.** The error names the *symptom file*, not the missing package — searching the literal
+message finds nothing useful. Ask instead: "whose config is that, and what installs it?"
+
+**Source.** multinode-ddp-skypilot — Dockerfile gained `openssh-server` + `rsync` after exactly
+this failure.

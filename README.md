@@ -54,6 +54,8 @@ came from and the mistake it fixes.
 - When the framework pins torch, pick the image by the wheel's CUDA major (driver 570 vs cu13 wheels)
 - A CUDA image is not a build box: JIT serving stacks need a toolchain and the venv on PATH
 - Reverse-engineer a spec-based CLI from its installed schemas, then prove it on the tool's own mock server
+- Ship heavy images from datacenter egress; keep your changes as thin layers
+- The orchestrator has an implicit contract with your image — and breaks it cryptically
 
 ### [mcp/](mcp.md) — Model Context Protocol
 - Expose tools as thin adapters over the shared functions
@@ -89,6 +91,7 @@ came from and the mistake it fixes.
 - Assert every claim in the writeup against the artifacts with a script, not a read-through
 - Candor and self-documenting artifacts are rewarded, not penalized
 - One requirement, one named artifact — reviewers grade what they can find
+- Annotate spec deviations where they happen, or they grade as drift
 
 ## Sources
 
@@ -105,6 +108,9 @@ came from and the mistake it fixes.
 - **DDP Scaling Anatomy** — GPT-2 Large on 1 vs 4 H100s over TCP, with a live cloud-quota
   incident debugged mid-session
   ([repo](https://github.com/CarmitHaas/ddp-scaling-anatomy)). `tools`, `llm-ops`, `evaluation`.
+- **multinode-ddp-skypilot** — 2-node DDP plumbing on Nebius mk8s via SkyPilot (the predecessor
+  project, graded 97/100) ([repo](https://github.com/CarmitHaas/multinode-ddp-skypilot)).
+  `llm-ops`, `evaluation`.
 - **Glass-box PPO** - PPO on GPT-2 built from scratch (no `PPOTrainer`), swept over clip epsilon,
   GAE lambda, KL beta, PPO epochs and a no-critic ablation: 11 controlled runs on CPU.
   `evaluation`, `llm-ops`.

@@ -678,3 +678,28 @@ half-implemented.
 
 **Source.** CS Data Analyst Agent — graded 120/120; the feedback text mapped one-to-one onto node
 and constant names.
+
+---
+
+## Annotate spec deviations where they happen, or they grade as drift
+
+**Problem.** Real constraints force deviations from a reference spec — my H100 quota didn't come
+through in time, so a graded DDP assignment ran on 2x L40S with a matching smaller preset. The
+submission worked end to end, but the config silently differed from the template and took the
+assignment's only deduction (-3, "a notable deviation from the template"). The grader had no way to
+tell a reasoned adaptation from carelessness, so it scored as carelessness.
+
+**Technique.** Every deviation from a reference gets a one-liner *at the artifact itself* (a
+comment in the config, a note in the README table): what changed, why, and what stays equivalent
+("L40S instead of H100: no H100 quota on this tenant; world size, NCCL path, and job topology
+unchanged"). The reviewer decides with your reasoning in view instead of without it.
+
+**When to use.** Any deliverable checked against a template, reference architecture, or rubric —
+assignments, client deployments against a standard architecture, compliance baselines.
+
+**Pitfall.** The note must sit where the reviewer reads the deviation, not in a separate doc they
+may never open. A rationale they don't see is a rationale that doesn't exist — same lesson as
+candor-in-artifacts, one step earlier in time.
+
+**Source.** multinode-ddp-skypilot — graded 97/100; the single -3 was an unannotated (though
+forced and sound) hardware substitution.
