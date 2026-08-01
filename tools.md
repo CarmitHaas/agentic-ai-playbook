@@ -109,3 +109,32 @@ for i in 1 2 3; do timeout 600 big_upload && break; done   # timeout turns a han
 kills itself (exit 144). Match the child process exactly with `pgrep -fx`, or kill by PID.
 
 **Source.** Nebius DDP run, pushing a 20GB image over a degraded home uplink.
+
+## The user's screenshots folder is an evidence conveyor
+
+**Problem.** Browser automation runs in its own profile, so SSO-protected consoles are
+unreachable exactly when the session needs authenticated evidence (incident screenshots,
+"it really says 3 of 3" proof). Fighting the auth wastes the human's time and still fails.
+
+**Technique.** Split the channel: the human uses their native screenshot flow in their
+own authenticated browser, and the agent watches the OS screenshot directory
+(`~/Pictures/Screenshots` on GNOME), ingests the newest files, verifies each image by
+actually reading it, renames descriptively into the repo, and stitches multi-view panels
+with imagemagick. Human does auth and framing; agent does filing, naming, and composition.
+
+**When to use.** Any authed UI the agent cannot reach, and generally for human-in-the-loop
+evidence collection; it degrades gracefully because the human's flow is one keystroke.
+
+**Code sketch.**
+```bash
+ls -t ~/Pictures/Screenshots/*.png | head -3 | while IFS= read -r f; do  # filenames contain spaces
+  cp "$f" docs/img/…; done
+montage a.png b.png -tile 1x2 -geometry +0+8 -background white panel.png
+```
+
+**Pitfall.** Chat posting order is not capture order; identify every image by reading it
+before naming, or the "before" panel gets the "after" file. And `for f in $(ls …)` breaks
+on the spaces in default screenshot names; use a newline-safe loop.
+
+**Source.** Same session; the Playwright window never got authenticated and every piece
+of console evidence still landed in the repo, correctly named.

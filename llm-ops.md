@@ -319,3 +319,38 @@ The step-entrypoint list is also exactly the interface a later KubernetesPodOper
 the entrypoint owns them. Airflow's env stays clean and the migration path stays open.
 
 **Source.** coding-agent-eval-pipeline — pipeline/run_step.py, dags/evaluate_agent.py.
+
+## Read the operation error body, not the console status label
+
+**Problem.** Cloud consoles compress machine errors into two-word labels. gRPC code 8,
+`ResourceExhausted`, covers both "the datacenter is out of hardware" and "your quota
+blocked this", and the console renders both as "Resource exhausted". I spent ~90 minutes
+chasing GPU capacity across three pools (on-demand, preemptible, even a whole 8-GPU host)
+while the real error was a public-IPv4 quota: limit 3, my 4th node requested the 4th.
+
+**Technique.** On any provisioning or state-changing API failure, the first move is
+fetching the operation record and reading `status.message` and `status.details`. The
+structured details name the violated quota with limit and requested, and `retry_type`
+says whether the platform will ever retry it for you (`NOTHING` means your retry loop is
+decorative).
+
+**When to use.** Every cloud allocation failure, and any time two signals disagree; the
+capacity advisor kept saying HIGH while allocations failed, and that disagreement itself
+was the message that the label was lying.
+
+**Code sketch.**
+```bash
+nebius compute instance list-operations-by-parent --parent-id <project> --format json \
+  | jq '.operations[] | select(.status.code != 0) | {desc: .description, msg: .status.message, retry: .status.details[0].retry_type}'
+# AWS analog: CloudTrail event / describe-instances StateReason, not the console badge
+```
+
+**Pitfall.** The pre-flight version of the same mistake: audit quota for EVERY resource
+the template allocates times node count (instances, disks, and above all public IPs),
+not just the marquee GPU number. `4 nodes x 1 public IP = 4 > 3` was knowable before
+creating anything.
+
+**Source.** DDP scaling anatomy (4x H100 on Nebius mk8s, 2026-08). Five failed
+allocations across three pools; fixed in ten minutes by a no-public-IP node group once
+the operation body was read. Extracted live into the `triaging-cloud-allocation-failures`
+skill.

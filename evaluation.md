@@ -266,3 +266,32 @@ honestly and the comparison against the healthy rerun told the whole story. Desi
 path first; it documents itself.
 
 **Source.** coding-agent-eval-pipeline — runs/, pipeline/helpers.py, REPORT.md section 5.
+
+## Proof-carrying deliverables: CI re-derives the report from committed artifacts
+
+**Problem.** A results report is a pile of claims. A reviewer, human or AI grader,
+cannot cheaply check that the numbers came from the logs, and silent drift (edited
+table, regenerated log) is invisible.
+
+**Technique.** Commit the raw logs next to the parser that produced the report, and add
+a CI job that reruns the parser over the committed logs and asserts the headline values
+(parameter count, world size, total bytes, throughput) plus the structural invariants
+(the two job specs differ only by the intended key). The green badge then means "the
+evidence recomputes", not "someone pushed".
+
+**When to use.** Measurement reports, benchmarks, graded homework, incident postmortems;
+anything whose credibility rests on numbers derived from artifacts.
+
+**Code sketch.**
+```yaml
+- run: python tools/parse_and_plot.py logs/1gpu_log.txt logs/4gpu_log.txt --summary /tmp/s.md
+- run: grep -q "params=774,030,080" /tmp/s.md && grep -q "1,548,060,160,000" /tmp/s.md
+- run: python -c "…assert configs identical except num_nodes…"
+```
+
+**Pitfall.** Assert values, not file existence, or CI green-lies on empty inputs. And
+the deliverable logs must be force-tracked past the .gitignore (`!logs/*.txt`), or the
+clone CI runs on nothing.
+
+**Source.** Same session; a grader can clone the repo and watch every report number
+reproduce in 22 seconds.

@@ -30,6 +30,7 @@ came from and the mistake it fixes.
 - One pure-function layer, many adapters (agent + MCP share it)
 - Return counts and small samples, never whole tables
 - Tool descriptions are part of the logic
+- The user's screenshots folder as an evidence conveyor (auth-proof human-in-the-loop capture)
 
 ### [memory/](memory.md) — what an agent remembers
 - Two different memories: episodic vs semantic
@@ -42,6 +43,7 @@ came from and the mistake it fixes.
 - Turn tracing off when measuring latency / SLOs
 - MoE serving: memory by total params, compute by active params
 - Build on a cheap same-model backend before the scarce GPU
+- Read the operation error body, not the console label; pre-flight every quota the template allocates
 
 ### [mcp/](mcp.md) — Model Context Protocol
 - Expose tools as thin adapters over the shared functions
@@ -61,6 +63,7 @@ came from and the mistake it fixes.
 - Garbage source data masquerades as hallucination
 - Execution accuracy on canonicalized row-sets (text-to-SQL)
 - Per-iteration pass rate: prove the agent loop earns its keep
+- Proof-carrying deliverables: CI re-derives the report from committed logs
 
 ## Sources
 
@@ -74,6 +77,9 @@ came from and the mistake it fixes.
   (vLLM), with Prometheus/Grafana/Langfuse observability and an SLO load test
   ([repo](https://github.com/CarmitHaas/text-to-sql-vllm-slo-carmit-haas)). `agents`, `evaluation`,
   `llm-ops`.
+- **DDP Scaling Anatomy** — GPT-2 Large on 1 vs 4 H100s over TCP, with a live cloud-quota
+  incident debugged mid-session
+  ([repo](https://github.com/CarmitHaas/ddp-scaling-anatomy)). `tools`, `llm-ops`, `evaluation`.
 - [Nir Diamant — Agent Memory Techniques](https://github.com/NirDiamant/Agent_Memory_Techniques)
   (reference for the memory work).
 
