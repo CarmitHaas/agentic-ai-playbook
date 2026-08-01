@@ -354,3 +354,39 @@ creating anything.
 allocations across three pools; fixed in ten minutes by a no-public-IP node group once
 the operation body was read. Extracted live into the `triaging-cloud-allocation-failures`
 skill.
+
+## Napkin-math the communication budget before the first GPU-hour
+
+**Problem.** Distributed training experiments get launched on vibes, then the team burns
+paid GPU-hours debugging "why is 4x hardware slower than 1x" as if it were a bug. In my
+course cohort, multiple people hit the same 90%-communication wall days apart, treated it
+as a misconfiguration, and some pivoted topology entirely to make the numbers look right.
+
+**Technique.** Ten minutes of arithmetic before provisioning: gradient payload =
+params x bytes per grad; ring all-reduce moves 2(N-1)/N x payload per GPU per step;
+divide by the realistic interconnect bandwidth (TCP ~5-10 Gbit/s, InfiniBand 100x that)
+and compare against the estimated compute per step (FLOPs / achievable TFLOPS). Then
+pre-register the falsifiable check: write down which log line decides between your two
+worlds (here: `via NET/Socket` vs `via NET/IB`) before the run starts.
+
+**When to use.** Any multi-device or multi-node training plan, before committing money;
+any benchmark where "slow" could be either a bug or the phenomenon itself.
+
+**Code sketch.**
+```python
+params = 774_030_080
+payload = params * 4                     # fp32 grads: 3.10 GB
+ring    = 2 * (4-1)/4 * payload          # 4.64 GB per GPU per step
+tcp     = ring / (6e9/8)                 # ~6 Gbit/s TCP -> ~6.2 s ceiling
+compute = 6 * params * 16*512 / 400e12   # batch tokens / 400 TFLOPS -> ~0.1 s
+# comm >> compute: the experiment is communication-bound BEFORE you rent anything
+```
+
+**Pitfall.** An envelope estimate that says "comm-bound" is not a reason to cancel; it
+is the hypothesis that turns the run into a measurement instead of a surprise. And when
+the assignment (or the client ask) is "explain the scaling", the underperformance IS the
+deliverable; fixing the topology to prettier numbers answers a question nobody asked.
+
+**Source.** DDP scaling anatomy: predicted comm-bound over TCP in cold prep, measured
+4.303 s of comm inside a 4.600 s step the same day. Cohort peers hit the identical wall
+unwarned days apart.

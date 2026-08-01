@@ -44,6 +44,7 @@ came from and the mistake it fixes.
 - MoE serving: memory by total params, compute by active params
 - Build on a cheap same-model backend before the scarce GPU
 - Read the operation error body, not the console label; pre-flight every quota the template allocates
+- Napkin-math the communication budget before the first GPU-hour; pre-register the deciding log line
 
 ### [mcp/](mcp.md) — Model Context Protocol
 - Expose tools as thin adapters over the shared functions
