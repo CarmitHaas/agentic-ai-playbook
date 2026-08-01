@@ -342,3 +342,29 @@ spend the extra runs.
 have pushed the compiled path past the tier boundary; I never ran the pair.
 
 **Source.** roofline_to_Cuda HW2 -- 2.99x versus the 3.0x "good" tier.
+
+---
+
+## Thread one run_id through every surface; reviewers verify by cross-referencing
+
+**Problem.** Evidence that doesn't line up reads as unverifiable, even when it's all true. A
+screenshot showing one name, a folder named another way, and a report quoting a third number
+forces the reviewer to take your word for it, and reviewers don't.
+
+**Technique.** Generate the run identifier once, at the top of the pipeline, and let it name
+everything: the artifact folder (`runs/<run-id>/`), the MLflow run name, the S3 prefix
+(`s3://bucket/runs/<run-id>/`), the eval harness `--run_id`, and every row of every table in the
+report. Any two pieces of evidence then corroborate each other with zero explanation.
+
+**When to use.** Anything graded, reviewed, or audited. The grader feedback on the coding-agent
+pipeline shows the exact checks a careful reviewer runs: "Run names in MLflow match the committed
+run folder names exactly", "screenshots match committed artifacts", "the manifest records the S3
+URI the screenshot shows". Each of those sentences was worth points and cost nothing to enable.
+
+**Pitfall.** Auto-generated IDs from different tools (MLflow's UUIDs, Airflow's manual__
+timestamps, your folder names) will happily diverge unless you force yours through explicitly.
+Set the name in every integration; never accept a tool's default ID as the public identity of a
+run.
+
+**Source.** coding-agent-eval-pipeline — graded 100/100; the grader's per-task feedback is the
+evidence, cross-checks quoted verbatim.
