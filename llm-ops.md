@@ -252,3 +252,70 @@ of the dashboard sends the whole diagnosis down the wrong path, and the panels t
 mislead the next reader too (so fix the panel, not just your notes).
 
 **Source.** Text-to-SQL vLLM SLO — `serving.json` (KV + e2e panel descriptions added after the misread).
+
+---
+
+## Set an explicit max_tokens on agent loops; provider defaults kill episodes silently
+
+**Problem.** My first mini-swe-agent episodes all died with `RepeatedFormatError`: the model hit an
+output-token ceiling mid-reasoning (`finish_reason=length`) before emitting the tool call the
+harness expects, three times in a row, episode over. The instructor's own sample batches show the
+same thing: 3 of his 4 runs ended with every instance in that state. Nobody set a limit; the
+provider's default applied, and the default was too small for a thinking model.
+
+**Technique.** Always pass an explicit output budget on agentic loops and expose it as a run
+parameter, not a constant. In mini-swe-agent that's one config override the pipeline injects on
+every run: `-c model.model_kwargs.max_tokens=<budget>`.
+
+**When to use.** Any harness where the model must finish with a parseable action (tool call, bash
+block, JSON). Truncation doesn't error, it just produces garbage the loop can't parse.
+
+**Pitfall.** The exact number mattered less than setting one: 4096 and 8192 both worked. My count
+across the project: no explicit limit, 0 of 11 episodes submitted a patch; explicit limit, 19 of 19.
+
+**Source.** coding-agent-eval-pipeline — REPORT.md section 6.
+
+---
+
+## Orchestrate at the right altitude: harness inside the experiment, workflow engine around it
+
+**Problem.** "Airflow runs LLM steps, LangGraph orchestrates steps, so why not LangGraph for the
+pipeline?" Because there are two loops at different altitudes and each tool owns one.
+
+**Technique.** The inner loop (think, act, observe; seconds per step; state in memory) belongs to
+the agent harness: LangGraph, or mini-swe-agent's hand-rolled equivalent. The outer loop (batch
+jobs, retries on infrastructure failures, run history, multi-user triggering; minutes to hours)
+belongs to a workflow engine: Airflow. Same split on the observability side: Langfuse-style
+tracing looks inside one conversation; MLflow compares whole runs. Four tools, four altitudes,
+no overlap when placed right.
+
+**When to use.** Any time an agent experiment graduates from "I run a script" to "the team runs
+experiments". Putting Airflow inside the agent loop adds seconds of scheduler latency per model
+turn; putting LangGraph around batch jobs means rebuilding retries, logs, history, and UI.
+
+**Pitfall.** The tempting shortcut is one tool for everything. The tell that you got the altitude
+wrong: either your DAG has a task per model turn, or your agent framework has a cron wrapper.
+
+**Source.** coding-agent-eval-pipeline — evaluate_agent DAG over mini-swe-agent episodes.
+
+---
+
+## One step entrypoint, two isolation levels
+
+**Problem.** Pipelines developed locally as subprocesses get rewritten for containers at deploy
+time, and the rewrite is where bugs breed.
+
+**Technique.** Every pipeline step is `python -m pipeline.run_step <step> <run_dir>`. The DAG
+decides isolation per environment: local mode wraps it in a subprocess, docker mode passes the
+identical command to DockerOperator. The entrypoint rebases paths from the run folder's own
+location, so a run created on a host works inside a container mounted elsewhere. I deployed the
+locally-tested pipeline to the VM unchanged; the process boundary I drew on day one became the
+container boundary on day two.
+
+**When to use.** Any DAG you develop under `airflow standalone` and ship under compose or k8s.
+The step-entrypoint list is also exactly the interface a later KubernetesPodOperator needs.
+
+**Pitfall.** Keep the heavy dependencies (mlflow, boto3) out of the orchestrator's environment;
+the entrypoint owns them. Airflow's env stays clean and the migration path stays open.
+
+**Source.** coding-agent-eval-pipeline — pipeline/run_step.py, dags/evaluate_agent.py.

@@ -241,3 +241,28 @@ itself. Read what the criterion actually rewards: the conclusion, the process, o
 
 **Source.** Text-to-SQL vLLM SLO — Phase 6 scored 22/25; the 3-point deduction was "only one serving-side
 config change before concluding structural."
+
+---
+
+## Every eval run is a self-contained folder, and a failed run is a recorded outcome
+
+**Problem.** Agent benchmark numbers nobody can reproduce, and crashed batches that vanish as if
+they never ran. "Which config produced this 53%?" should never be a research question.
+
+**Technique.** The pipeline writes one folder per run before anything executes: `config.json`
+(resolved params), then the agent's trajectories and predictions, the harness logs and report,
+`metrics.json`, and a `manifest.json` inventory with the artifact URI. Empty predictions don't
+crash the pipeline; evaluation skips with a written reason and metrics record zeros. Reruns by
+run_id are idempotent: finished instances are skipped, so a crashed batch resumes. MLflow gets
+one row per run with the folder's URI as a tag.
+
+**When to use.** Any eval you'll run more than once, which is every eval. The test of the layout:
+hand a stranger the folder and nothing else; if they can't reconstruct what happened, something
+belongs in the folder that isn't there.
+
+**Pitfall.** My most useful run folder is the one where the agent produced an empty patch because
+a 2.7 GB docker image was still downloading. It recorded `submitted 1, empty_patch 1, resolved 0`
+honestly and the comparison against the healthy rerun told the whole story. Design the failure
+path first; it documents itself.
+
+**Source.** coding-agent-eval-pipeline — runs/, pipeline/helpers.py, REPORT.md section 5.
