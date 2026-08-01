@@ -562,3 +562,69 @@ the pre-committed falsifier that reads as a failed experiment instead of the fin
 
 **Source.** Glass-box PPO lab, all five exercises. Graded 100/100, with the protocol itself cited
 as the reason.
+
+---
+
+## When a locked harness computes a number wrong, recover it from the raw artifact and say where it came from
+
+**Problem.** The graded notebook's fixed harness scraped weight memory with
+`re.search(r"weights (?:took|take) ([\d.]+) GiB", log)`. Current vLLM logs `Model loading took 14.29 GiB`,
+so the regex missed, `weights_gib` came back `NaN`, and the comparison table printed `nan` for the one
+metric the first writeup question was about. The harness was marked do-not-edit.
+
+**Technique.** Leave the harness alone and go to the artifact it was reading. The real numbers were sitting
+in the saved server logs the whole time, so I sourced them from there, put them in the writeup, and named
+the log line they came from. Then I shipped the logs *with* the submission so a reviewer could check the
+claim against the same file.
+
+**When to use.** Graded, audited, or otherwise frozen harnesses. More generally, any time a derived metric
+is wrong but the raw evidence underneath it is intact: fix the reading, not the instrument.
+
+**Code sketch.**
+```python
+# harness said nan; the log did not
+w = {t: float(re.search(r"Model loading took ([\d.]+) GiB",
+                        open(f"results/q2/vllm_{t}.log").read()).group(1))
+     for t in ("bf16", "fp8")}          # {'bf16': 14.29, 'fp8': 8.2} -> 1.74x
+```
+
+**Pitfall.** The tempting move is a one-character fix to the regex, which silently invalidates the run under
+the rules and is invisible in the diff a grader skims. Disclosure beats repair here: the `nan` stayed
+visible, the writeup carried the true figures with their provenance, and the grader credited the analysis
+as "grounded in actual vLLM log data".
+
+**Source.** Quantization/serving homework, BF16 vs FP8. Predicted before the paid run, from reading the
+harness regex against the log format the installed version actually emits.
+
+---
+
+## Assert every claim in the writeup against the artifacts with a script, not a read-through
+
+**Problem.** A consistency pass done by eye is exactly as reliable as your attention at midnight, and my
+writeup carried 34 numbers: measured medians, ratios I had rounded, tail percentiles pulled from raw
+reports, and a parameter-accounting argument I had derived by hand.
+
+**Technique.** Write the QA as executable assertions. Every figure that appears in the prose gets read back
+out of the artifact it claims to come from, every ratio gets recomputed from source rather than trusted, and
+every derived claim gets rebuilt from first principles. Extends "every number must trace to an output cell"
+by making the trace mechanical.
+
+**When to use.** Any deliverable where prose asserts numbers, especially once the compute that produced them
+is gone. Run it as the last step, after the environment that made the numbers is already torn down.
+
+**Code sketch.**
+```python
+near(1.74, w["bf16"] / w["fp8"], "memory ratio")           # recompute, don't retype
+near(31.6, (1 - r_itl) * 100, "'32% faster decode'")       # check the rounding you wrote
+# and re-derive the argument itself
+pred = quant_params / GiB + emb_params * 2 / GiB           # 8.16 predicted
+assert abs(pred - w["fp8"]) / w["fp8"] < 0.01              # 8.20 measured
+```
+
+**Pitfall.** Set the tolerance to the precision you actually wrote, or the script cries wolf. Two of my
+"failures" were the checker's fault: a `…` that lived inside the template's own instruction comment, and
+`4.1255` flagged against the `4.13` I had correctly rounded to. Investigate every flag rather than trusting
+either the script or yourself, and record which ones were false.
+
+**Source.** Quantization/serving homework. Also caught nothing real, which is the point: it converted "I
+think the writeup is right" into 34 checks and a leak scan.

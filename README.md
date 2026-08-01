@@ -48,6 +48,9 @@ came from and the mistake it fixes.
 - Probe for silent degradation before the metered run — CUDA visible, right device, compile really fires
 - Drive a notebook from a persistent kernel; write outputs back by cell id, never by index
 - Check the library API at the installed version, not from memory (transformers 5.x CLIP)
+- When the framework pins torch, pick the image by the wheel's CUDA major (driver 570 vs cu13 wheels)
+- A CUDA image is not a build box: JIT serving stacks need a toolchain and the venv on PATH
+- Reverse-engineer a spec-based CLI from its installed schemas, then prove it on the tool's own mock server
 
 ### [mcp/](mcp.md) — Model Context Protocol
 - Expose tools as thin adapters over the shared functions
@@ -79,6 +82,8 @@ came from and the mistake it fixes.
 - Commit the prediction and its falsifier in writing before the run
 - Pick evaluation data that is allowed to fail (a 100% score means the test is too easy)
 - Write the analysis from captured outputs, not the outputs you expect
+- A locked harness with a wrong number: recover it from the raw artifact and disclose the source
+- Assert every claim in the writeup against the artifacts with a script, not a read-through
 
 ## Sources
 
@@ -99,6 +104,9 @@ came from and the mistake it fixes.
   GAE lambda, KL beta, PPO epochs and a no-critic ablation: 11 controlled runs on CPU.
   `evaluation`, `llm-ops`.
 - **roofline_to_Cuda** — GPU performance homework (roofline model, decode-loop optimization, torch.compile & CUDA graphs), executed on a rented H100. `llm-ops`, `evaluation`.
+- **Quantization & serving** - fake quantization from first principles, then the same 7B model served
+  BF16 vs on-the-fly FP8 on an H100 and benchmarked with guidellm (memory 1.74x, decode 32% faster,
+  prefill 17% slower at batch size 1). `llm-ops`, `evaluation`.
 - **Multimodal (BLIP + CLIP)** - image captioning, VQA, and CLIP face recognition on LFW, run locally on CPU with a train/test split and an out-of-set stranger test. `evaluation`, `rag`, `llm-ops`.
 - [Nir Diamant — Agent Memory Techniques](https://github.com/NirDiamant/Agent_Memory_Techniques)
   (reference for the memory work).

@@ -476,3 +476,104 @@ and outputs against a backup, so "I did not touch the outputs" is a check and no
 
 **Source.** Glass-box PPO lab (Nebius Academy session 2), where section 14 was added to a notebook
 whose earlier sections had to stay untouched.
+
+---
+
+## When the serving framework pins torch, pick the image by the wheel's CUDA major
+
+**Problem.** vLLM 0.26 pulled torch 2.11 with the whole `nvidia-*-cu13` stack. The GPU image I booted was
+`ubuntu24.04-cuda12` (driver 570), and torch refused to initialize: `The NVIDIA driver on your system is
+too old (found version 12080)`. That failure arrived after the instance was already billing.
+
+**Technique.** Decide which side is fixed before you provision. For a pure-torch job you can pin the wheel
+to the host: `pip install torch --index-url .../whl/cu126` and keep the image. For a framework that pins
+torch itself (vLLM, TensorRT-LLM, anything shipping compiled kernels), you cannot, so pick the *image* by
+the wheel's CUDA major instead. CUDA 13 wheels need an r580 driver, CUDA 12 wheels need r525+.
+
+**When to use.** Every rented-GPU run where the stack is installed by pip rather than baked into the image.
+Check `nvidia-smi` and the framework's CUDA major before `pip install`, not after.
+
+**Code sketch.**
+```bash
+# on the box, before installing anything expensive
+nvidia-smi --query-gpu=driver_version --format=csv,noheader   # 580.159.04
+# and know what you are about to pull: cu13 wheels -> needs >= 580
+pip download vllm --no-deps -d /tmp/x && ls /tmp/x            # or read the release notes
+```
+
+**Pitfall.** The two fixes are not interchangeable, and the pure-torch one is the reflex if that is what
+you did last time. I had solved the same-looking error on an earlier assignment by installing a `+cu126`
+torch, and that instinct was wrong here: swapping torch under vLLM breaks its compiled kernels. Same
+symptom, opposite fix, decided by whether something else owns the torch pin.
+
+**Source.** Quantization/serving homework, BF16 vs FP8 on an H100. Cost 8 minutes of billed GPU and one
+instance rebuild.
+
+---
+
+## A CUDA image is not a build box: JIT serving stacks need a toolchain and the venv on PATH
+
+**Problem.** With the driver finally right, `vllm serve` still died twice at model load. First
+`fatal error: Python.h: No such file or directory`, then `FileNotFoundError: 'ninja'`. Neither is a GPU
+problem. vLLM compiles Triton and Inductor kernels *at load time*, so it shells out to a C compiler and to
+`ninja` on the first request to build them.
+
+**Technique.** Treat a serving box as a build box. Install `python3-dev` and `build-essential` alongside the
+framework, and launch with the venv's `bin` on `PATH` so pip-installed helper binaries are actually found.
+Calling `.venv/bin/vllm` directly does *not* put `.venv/bin` on `PATH`, so the `ninja` that pip installed
+into that same venv stays invisible to the subprocess.
+
+**When to use.** Any framework that JIT-compiles kernels (vLLM, Triton, torch.compile/Inductor, flash-attn
+builds) on a minimal cloud image. Cloud CUDA images ship the driver and runtime, rarely the headers.
+
+**Code sketch.**
+```bash
+sudo apt-get install -y python3-dev build-essential ninja-build
+export PATH="$HOME/proj/.venv/bin:$PATH"     # not just .venv/bin/vllm
+vllm serve "$MODEL" --quantization fp8 --max-model-len 4096
+```
+
+**Pitfall.** Two traps around detaching the server over ssh. `pkill -f 'vllm serve'` matches its own
+`bash -c` command line and kills the shell that issued it (use `pkill -f '[v]llm serve'`). And
+`nohup ... &` through a one-shot ssh command died silently with no log file; a `tmux new-session -d`
+survived and kept the log. The PATH fix mattered beyond the smoke test, because the graded harness invoked
+bare `vllm` and `guidellm` by name.
+
+**Source.** Quantization/serving homework, on a `ubuntu24.04-cuda13.0` Nebius image.
+
+---
+
+## Reverse-engineer a spec-based CLI from its installed schemas, then prove it on the tool's own mock server
+
+**Problem.** The assignment deliberately withheld the benchmark command and told me to work it out from the
+docs. guidellm 0.7.x had moved from flat flags to specs (`--data kind=synthetic_text,prompt_tokens=512`),
+web access was blocked, and a wrong flag only shows up as a failed run on a metered GPU.
+
+**Technique.** Two free steps, both on a laptop. First, enumerate the tool's registered spec kinds and their
+required fields straight out of the installed package, so "which key is required" is read, not guessed.
+Then close the loop: many benchmark tools ship a fake backend (`guidellm mock-server`), so run the real
+command end to end against it and parse the report it writes.
+
+**When to use.** Any CLI whose arguments are structured values, and any tool you must drive correctly on the
+first paid attempt. Also the fastest way to survive a docs outage or a version whose docs have drifted.
+
+**Code sketch.**
+```python
+# every registered kind and what it actually requires
+import inspect, pkgutil, importlib; from pydantic import BaseModel
+for m in pkgutil.walk_packages(pkg.__path__, pkg.__name__ + "."):
+    mod = importlib.import_module(m.name)
+    for _, o in vars(mod).items():
+        if inspect.isclass(o) and issubclass(o, BaseModel) and "kind" in getattr(o, "model_fields", {}):
+            req = [f for f, v in o.model_fields.items() if v.is_required()]
+            print(o.model_fields["kind"].default, "REQUIRED:", req)
+# -> openai_http: [target] | synthetic_text: [prompt_tokens] | throughput: [max_concurrency]
+```
+
+**Pitfall.** Validating the invocation is only half of it. The parser I wrote was checked against the
+assignment's *bundled sample* report, which was a hand-written v0.4 shape; the mock server produced a real
+0.7.1 report and let me confirm the live schema matched, including that percentiles are keyed `p90`/`p99`
+rather than `90`. That check is what told me the tail-latency table would hold numbers instead of `nan`.
+
+**Source.** Quantization/serving homework. The whole benchmark command was validated on CPU, so the H100
+only ever ran the one cell that needed a GPU.
