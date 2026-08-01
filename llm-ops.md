@@ -390,3 +390,40 @@ deliverable; fixing the topology to prettier numbers answers a question nobody a
 **Source.** DDP scaling anatomy: predicted comm-bound over TCP in cold prep, measured
 4.303 s of comm inside a 4.600 s step the same day. Cohort peers hit the identical wall
 unwarned days apart.
+
+
+---
+
+## Probe for silent degradation before the metered run
+
+**Problem.** A freshly-provisioned GPU box can be quietly wrong in a way that never raises an
+error. `pip install torch==2.12.1` pulled the newest CUDA build (`+cu130`); the rented H100's
+driver only spoke CUDA 12.4, so `torch.cuda.is_available()` returned False with just a warning.
+The graded notebooks would have run to completion on CPU and written plausible placeholder
+numbers — on a GPU I was paying for by the minute.
+
+**Technique.** Before the real run, run a ten-second probe that fails LOUDLY on the exact
+silent-degradation conditions: is the accelerator actually visible, is it the device you
+rented, and does the expensive path (here `torch.compile`) really engage instead of falling
+back. Start the graded run only after the probe prints the expected device and a compiled
+result.
+
+**When to use.** Any one-shot, metered, or graded run on hardware or an environment you did
+not build yourself and cannot cheaply redo.
+
+**Code sketch.**
+```python
+import torch
+assert torch.cuda.is_available(), "CUDA missing -- would silently run on CPU"
+print(torch.cuda.get_device_name(0))                   # the card you actually rented?
+f = torch.compile(lambda x: x * 2 + 1)
+print(float(f(torch.randn(8, device="cuda")).sum()))   # does compile really fire?
+```
+
+**Pitfall.** `pip install torch==X` grabs the newest CUDA build, which an older driver cannot
+run. Match the build to the driver: a `cu126` wheel runs on a 12.4 driver via CUDA
+minor-version compatibility; a `cu130` (major 13) wheel does not. The failure mode is silence,
+not a crash.
+
+**Source.** roofline_to_Cuda (H100 perf homework) -- the probe caught cu130-vs-driver-550
+before the graded run, saving a full CPU-garbage run on a paid H100.

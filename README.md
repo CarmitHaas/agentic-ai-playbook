@@ -45,6 +45,7 @@ came from and the mistake it fixes.
 - Build on a cheap same-model backend before the scarce GPU
 - Read the operation error body, not the console label; pre-flight every quota the template allocates
 - Napkin-math the communication budget before the first GPU-hour; pre-register the deciding log line
+- Probe for silent degradation before the metered run — CUDA visible, right device, compile really fires
 
 ### [mcp/](mcp.md) — Model Context Protocol
 - Expose tools as thin adapters over the shared functions
@@ -65,6 +66,8 @@ came from and the mistake it fixes.
 - Execution accuracy on canonicalized row-sets (text-to-SQL)
 - Per-iteration pass rate: prove the agent loop earns its keep
 - Proof-carrying deliverables: CI re-derives the report from committed logs
+- Every number in the report must trace to an output cell (same measurement conditions)
+- Near a decision threshold, search the lever combination, not just single levers
 
 ## Sources
 
@@ -81,6 +84,7 @@ came from and the mistake it fixes.
 - **DDP Scaling Anatomy** — GPT-2 Large on 1 vs 4 H100s over TCP, with a live cloud-quota
   incident debugged mid-session
   ([repo](https://github.com/CarmitHaas/ddp-scaling-anatomy)). `tools`, `llm-ops`, `evaluation`.
+- **roofline_to_Cuda** — GPU performance homework (roofline model, decode-loop optimization, torch.compile & CUDA graphs), executed on a rented H100. `llm-ops`, `evaluation`.
 - [Nir Diamant — Agent Memory Techniques](https://github.com/NirDiamant/Agent_Memory_Techniques)
   (reference for the memory work).
 

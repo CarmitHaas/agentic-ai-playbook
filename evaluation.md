@@ -295,3 +295,50 @@ clone CI runs on nothing.
 
 **Source.** Same session; a grader can clone the repo and watch every report number
 reproduce in 22 seconds.
+
+
+---
+
+## Every number in the report must trace to an output cell
+
+**Problem.** My results table reported a ~180 ms baseline while the same notebook's graded run
+measured 241 ms. I had taken the supporting ablation in a separate pass with "better" timing
+(more iterations, TF32 on), so the two baselines disagreed. Every number was individually real,
+but the mismatch made the whole breakdown read as untrustworthy and cost a point.
+
+**Technique.** Derive every supporting number under the SAME conditions as the primary result
+-- ideally from the same run or the same cell -- so they are directly comparable. Add a final
+consistency pass: pull each number that appears in the prose and tables and confirm it matches
+an actual output artifact.
+
+**When to use.** Any deliverable that pairs a headline result with a table or narrative that
+explains it. Complements "isolate one variable at a time": isolate to *understand*, but report
+numbers that are *comparable*.
+
+**Pitfall.** A more careful measurement for the ablation is a trap when the headline number was
+measured more coarsely. Consistency with the source beats standalone precision, because a
+reviewer diffs your table against your own output cells.
+
+**Source.** roofline_to_Cuda HW2 (decode optimization) -- a 180 ms ablation table against a
+241 ms graded run.
+
+---
+
+## Near a decision threshold, search the combination, not just single levers
+
+**Problem.** Optimizing toward a tiered target, I measured each lever alone: one gave 2.6x,
+another was a small loss by itself, so I shipped the first and landed at 2.99x -- one hundredth
+under the 3.0x tier. The untested combination of the two was the likely path over the line.
+
+**Technique.** When a metric sits within a small margin of a decision boundary, test the
+cross-product of the promising levers, not just each in isolation. A lever that loses on its
+own can win in combination, and near a threshold that last interaction is where the points are.
+
+**When to use.** Tuning toward a tiered or pass/fail target when you are already within roughly
+10% of the next tier. Above that margin, single-lever attribution is enough; near the line,
+spend the extra runs.
+
+**Pitfall.** Dismissing a lever on its solo result. Half-precision hurt on its own but might
+have pushed the compiled path past the tier boundary; I never ran the pair.
+
+**Source.** roofline_to_Cuda HW2 -- 2.99x versus the 3.0x "good" tier.
