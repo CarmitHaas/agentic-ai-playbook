@@ -628,3 +628,27 @@ either the script or yourself, and record which ones were false.
 
 **Source.** Quantization/serving homework. Also caught nothing real, which is the point: it converted "I
 think the writeup is right" into 34 checks and a leak scan.
+
+---
+
+## Candor and self-documenting artifacts are rewarded, not penalized
+
+**Problem.** Under review the instinct is to hide the wrong turns and ship only the clean result. It
+feels safer. It scores worse, and it builds less trust.
+
+**Technique.** Write the gotcha into the artifact and the misread into the report. On a graded MLOps
+submission (97/100) the reviewer gave explicit credit for two things that feel like admissions of
+weakness: (a) Grafana panel descriptions that warn the next reader about the traps ("these dashed lines
+are thresholds, not data"; "tall P99 tails here are histogram artifacts"), and (b) a report that
+candidly narrated two dashboard misreads I made and then corrected. Both were cited as adding "real
+pedagogical value", and the honest "SLO missed, here is exactly why" outscored any green check.
+
+**When to use.** Any reviewed or shared deliverable: a report, a dashboard, a PR, or a product's own
+output to a user. Especially when a trap you hit will trip the next reader too.
+
+**Pitfall.** Candor is not self-flagellation. Narrate the wrong turn, the correction, and what it taught,
+in a line or two. A misread you found and fixed is a strength; one you hid is a landmine. And fix the
+artifact, not just your notes, so the annotation travels with it.
+
+**Source.** Text-to-SQL vLLM SLO — graded 97/100; Phase 2 and Phase 7 credit explicitly named the panel
+descriptions and the candidly-described misreads.
