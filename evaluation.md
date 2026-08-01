@@ -652,3 +652,29 @@ artifact, not just your notes, so the annotation travels with it.
 
 **Source.** Text-to-SQL vLLM SLO — graded 97/100; Phase 2 and Phase 7 credit explicitly named the panel
 descriptions and the candidly-described misreads.
+
+---
+
+## One requirement, one named artifact — reviewers grade what they can find
+
+**Problem.** A submission can implement every requirement and still read as if it missed some,
+because the implementation is smeared across helpers the reviewer has to reconstruct. The burden
+of proof lands on the reader, and readers under time pressure don't excavate.
+
+**Technique.** Make each rubric line findable as a *named* thing: one node, module, or constant
+whose name states the requirement it satisfies. On the agent assignment that took 120/120, the
+grader's per-item feedback simply named my artifacts back to me: "a distinct `router_node` ...
+wired as the first node", "`MAX_ITERATIONS = 12` in config.py, checked in `route_after_agent`",
+"a dedicated decline node", "profiles/<user>.md". Every rubric item resolved to a name in seconds,
+so every item got full credit with no benefit-of-the-doubt discount.
+
+**When to use.** Anything reviewed against a checklist — assignments, RFPs, compliance audits, PR
+review against acceptance criteria. Design the naming when you *start*, from the rubric.
+
+**Pitfall.** This is not extra structure for its own sake — it's the same structure you'd want
+anyway (small nodes, one job each), with names chosen from the reviewer's vocabulary instead of
+yours. If a requirement has no artifact you can point to, that's a smell the requirement is only
+half-implemented.
+
+**Source.** CS Data Analyst Agent — graded 120/120; the feedback text mapped one-to-one onto node
+and constant names.

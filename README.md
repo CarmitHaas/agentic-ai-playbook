@@ -22,6 +22,8 @@ came from and the mistake it fixes.
 - Refuse out-of-scope **structurally**, not with a prompt
 - Bound the loop: state counter *and* recursion-limit backstop
 - "Suggest, don't run": confirm-to-execute with a no-tools model
+- Let the route pick the prompt, not just the path
+- A fallback path drifts from its primary unless they share one source of truth
 - Stream the reasoning, not just the answer
 - Template prompts with `.replace`, not `.format`, when injecting data
 - Structured verify verdict, parsed defensively, default to the safe branch
@@ -36,6 +38,7 @@ came from and the mistake it fixes.
 - Two different memories: episodic vs semantic
 - Persist with SqliteSaver, not MemorySaver
 - Models deny their own memory — frame injected context as fact
+- Memory writes are best-effort side effects — they never break the turn
 
 ### [llm-ops/](llm-ops.md) — models & dependencies
 - Small model for routing, large for generation
@@ -84,6 +87,8 @@ came from and the mistake it fixes.
 - Write the analysis from captured outputs, not the outputs you expect
 - A locked harness with a wrong number: recover it from the raw artifact and disclose the source
 - Assert every claim in the writeup against the artifacts with a script, not a read-through
+- Candor and self-documenting artifacts are rewarded, not penalized
+- One requirement, one named artifact — reviewers grade what they can find
 
 ## Sources
 

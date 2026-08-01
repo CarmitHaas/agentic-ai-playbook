@@ -82,3 +82,36 @@ reflex wins. Be explicit, and also tell it *not to call a tool* for profile ques
 hallucinated a `get_memory()` tool before I added that).
 
 **Source.** CS Data Analyst Agent — `agent/profile.py`. Pure debugging discovery.
+
+---
+
+## Memory writes are best-effort side effects — they never break the turn
+
+**Problem.** Distilling a user profile takes an extra LLM call after each answered turn. Put
+it on the critical path naively and a flaky call (rate limit, timeout, bad output) turns a
+*successfully answered* question into a crashed turn — the user loses an answer they already
+earned, to a bookkeeping step.
+
+**Technique.** Run the profile update as a terminal side-effect node *after* the answer, and
+make it best-effort: on any exception, keep the old profile and return. The node returns `{}`
+— it changes no conversational state, so a failure has nothing to corrupt.
+
+**When to use.** Any post-turn write that improves *future* turns (profiles, summaries,
+indexes) but isn't part of *this* turn's answer.
+
+**Code sketch.**
+```python
+def update_profile(user_id, messages):
+    try:
+        updated = small_llm.invoke([_UPDATE_SYSTEM, prompt]).content
+    except Exception:
+        return                      # stale profile beats a broken turn
+    if updated: path.write_text(updated)
+# graph: agent -> profile_update -> END   (answer already streamed by then)
+```
+
+**Pitfall.** With `stream_mode="updates"` the answer reaches the user before this node runs,
+so its latency is hidden too — but only if it is genuinely last. Don't put anything the user
+waits for after it.
+
+**Source.** CS Data Analyst Agent — `agent/profile.py` (`update_profile`), `agent/graph.py`.

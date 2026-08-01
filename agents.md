@@ -111,6 +111,71 @@ state flag + a keyword check is both cheaper and more predictable.
 
 ---
 
+## Let the route pick the prompt, not just the path
+
+**Problem.** One system prompt that covers every kind of request grows conditional
+instructions ("if the question is structured do X, if open-ended do Y...") until the model
+starts mixing behaviors — quoting exact counts in summaries, or padding count answers with
+invented color.
+
+**Technique.** Reuse the router's classification a second time: keep a small shared base
+prompt and append a short route-specific hint at the agent node. The structured route gets
+"use count/list tools, give exact numbers"; the unstructured route gets "pull a grounded
+sample, then summarize in your own words". Each request sees only the instructions for its
+own kind.
+
+**When to use.** Any agent behind a router whose branches want different answer styles or
+tool habits.
+
+**Code sketch.**
+```python
+def _system_text_for_route(route):
+    text = BASE_SYSTEM
+    if route == "structured":   text += STRUCTURED_HINT
+    elif route == "unstructured": text += UNSTRUCTURED_HINT
+    return text            # decline/recommend never reach this prompt at all
+```
+
+**Pitfall.** The hint belongs at the agent node, not in the router — the router only labels.
+Keep hints to a sentence or two; if a hint grows paragraphs, that branch wants its own node.
+
+**Source.** CS Data Analyst Agent — `agent/graph.py` (`_system_text_for_route`). The grader
+called out the clean split explicitly.
+
+---
+
+## A fallback path drifts from its primary unless they share one source of truth
+
+**Problem.** A robust node often has a primary path and a fallback (typed structured output,
+falling back to plain-text parsing). The primary is driven by a schema; the fallback prompt
+enumerates the options *by hand*. Add an option later and only the primary gets it — the
+fallback silently degrades, and because the primary almost always works, nothing ever fails
+loudly.
+
+**Technique.** Generate every hand-written enumeration from the same typed definition the
+primary uses: one `Literal`/enum, and both the structured-output schema and the fallback
+prompt text derive from it.
+
+**When to use.** Anywhere a prompt restates something a schema already defines — route names,
+tool names, status values.
+
+**Code sketch.**
+```python
+Route = Literal["structured", "unstructured", "out_of_scope", "recommend"]
+
+PLAIN_SUFFIX = "Reply with exactly one word: " + ", ".join(get_args(Route)) + "."
+# instead of a hand-typed "structured, unstructured, or out_of_scope"  <- missed the 4th
+```
+
+**Pitfall.** This class of bug survives grading and demos: my router's fallback prompt still
+listed three routes after I added the fourth (`recommend`), and the repo took 120/120 with
+the bug latent — the structured-output primary always succeeded, so the stale fallback never
+ran. I only caught it re-reading the file in a post-grade QA pass.
+
+**Source.** CS Data Analyst Agent — `agent/router.py` (`ROUTER_SYSTEM_PLAIN` vs `Route`).
+
+---
+
 ## Stream the reasoning, not just the answer
 
 **Problem.** A black-box "here's the answer" agent is impossible to trust or debug.
